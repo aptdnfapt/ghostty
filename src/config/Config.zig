@@ -3552,13 +3552,18 @@ else
 @"gtk-titlebar": bool = true,
 
 /// Determines the side of the screen that the GTK tab bar will stick to.
-/// Top, bottom, and hidden are supported. The default is top.
+/// Top, bottom, left, and hidden are supported. The default is top.
 ///
 /// When `hidden` is set, a tab button displaying the number of tabs will appear
 /// in the title bar. It has the ability to open a tab overview for displaying
 /// tabs. Alternatively, you can use the `toggle_tab_overview` action in a
 /// keybind if your window doesn't have a title bar, or you can switch tabs
 /// with keybinds.
+///
+/// When `left` is set, the tab bar is replaced with a floating left sidebar.
+/// The sidebar overlays the terminal without resizing it. A thin toggle strip
+/// is always visible on the left edge of the window. Clicking the strip or
+/// using the `toggle_tab_sidebar` keybind action opens and closes the sidebar.
 @"gtk-tabs-location": GtkTabsLocation = .top,
 
 /// If this is `true`, the titlebar will be hidden when the window is maximized,
@@ -8823,6 +8828,7 @@ pub const GtkSingleInstance = enum {
 pub const GtkTabsLocation = enum {
     top,
     bottom,
+    left,
 };
 
 /// See gtk-toolbar-style

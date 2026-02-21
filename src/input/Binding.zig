@@ -569,6 +569,11 @@ pub const Action = union(enum) {
     /// found by running `ghostty +version`.
     toggle_tab_overview,
 
+    /// Toggle the left sidebar tab panel open or closed. The sidebar is only
+    /// available when `gtk-tabs-location` is set to `left`. This is only
+    /// supported on Linux.
+    toggle_tab_sidebar,
+
     /// Change the title of the current focused surface via a pop-up prompt.
     ///
     /// This requires libadwaita 1.5 or newer on Linux. The current libadwaita
@@ -1374,6 +1379,7 @@ pub const Action = union(enum) {
             .goto_tab,
             .move_tab,
             .toggle_tab_overview,
+            .toggle_tab_sidebar,
             .new_split,
             .goto_split,
             .goto_window,

@@ -7,6 +7,7 @@ const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
+const pango = @import("pango");
 
 const i18n = @import("../../../os/main.zig").i18n;
 const apprt = @import("../../../apprt.zig");
@@ -256,12 +257,19 @@ pub const Window = extern struct {
         /// setup by `setup-menu`.
         context_menu_page: ?*adw.TabPage = null,
 
+        /// Whether the left sidebar is expanded (wide) vs collapsed (icon-only).
+        sidebar_expanded: bool = false,
+
         // Template bindings
         tab_overview: *adw.TabOverview,
         tab_bar: *adw.TabBar,
         tab_view: *adw.TabView,
         toolbar: *adw.ToolbarView,
         toast_overlay: *adw.ToastOverlay,
+        sidebar_box: *gtk.Box,
+        sidebar_tab_list: *gtk.ListBox,
+        sidebar_toggle_btn: *gtk.Button,
+        sidebar_toggle_icon: *gtk.Image,
 
         pub var offset: c_int = 0;
     };
@@ -552,6 +560,82 @@ pub const Window = extern struct {
         tab_overview.setOpen(@intFromBool(!is_open));
     }
 
+    fn sidebarActive(self: *Self) bool {
+        const config = self.private().config orelse return false;
+        return config.get().@"gtk-tabs-location" == .left;
+    }
+
+    pub fn toggleTabSidebar(self: *Self) void {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return;
+        if (config.@"gtk-tabs-location" != .left) return;
+        priv.sidebar_expanded = !priv.sidebar_expanded;
+        self.applySidebarState();
+    }
+
+    fn applySidebarState(self: *Self) void {
+        const priv = self.private();
+        const expanded = priv.sidebar_expanded;
+        const sidebar = priv.sidebar_box.as(gtk.Widget);
+
+        if (expanded) {
+            sidebar.setSizeRequest(220, -1);
+            sidebar.removeCssClass("sidebar-collapsed");
+            sidebar.addCssClass("sidebar-expanded");
+        } else {
+            sidebar.setSizeRequest(36, -1);
+            sidebar.removeCssClass("sidebar-expanded");
+            sidebar.addCssClass("sidebar-collapsed");
+        }
+
+        priv.sidebar_toggle_icon.setFromIconName(
+            if (expanded) "pan-start-symbolic" else "pan-end-symbolic",
+        );
+        self.syncSidebarList();
+    }
+
+    fn syncSidebarList(self: *Self) void {
+        const priv = self.private();
+        const list = priv.sidebar_tab_list;
+        const tab_view = priv.tab_view;
+        const expanded = priv.sidebar_expanded;
+
+        list.removeAll();
+
+        const n = tab_view.getNPages();
+        const selected = tab_view.getSelectedPage();
+        var i: c_int = 0;
+        while (i < n) : (i += 1) {
+            const page = tab_view.getNthPage(i);
+            const title_raw = page.getTitle();
+
+            const row = gtk.ListBoxRow.new();
+            row.as(gobject.Object).setData("tab-page", page);
+
+            if (expanded) {
+                const title: [*:0]const u8 = if (title_raw[0] != 0) title_raw else "Terminal";
+                const label = gtk.Label.new(title);
+                label.as(gtk.Widget).setHalign(.start);
+                label.as(gtk.Widget).setHexpand(1);
+                label.setEllipsize(.end);
+                row.setChild(label.as(gtk.Widget));
+            } else {
+                const first: u8 = if (title_raw[0] != 0) title_raw[0] else 'T';
+                var buf: [2]u8 = .{ first, 0 };
+                const label = gtk.Label.new(@ptrCast(&buf));
+                label.as(gtk.Widget).setHalign(.center);
+                label.as(gtk.Widget).setHexpand(1);
+                row.setChild(label.as(gtk.Widget));
+            }
+
+            list.append(row.as(gtk.Widget));
+
+            if (selected) |sel| {
+                if (sel == page) list.selectRow(row);
+            }
+        }
+    }
+
     /// Toggle the visible property.
     pub fn toggleVisibility(self: *Self) void {
         const widget = self.as(gtk.Widget);
@@ -637,12 +721,23 @@ pub const Window = extern struct {
                 config.@"window-theme" == .ghostty,
         );
 
-        // Move the tab bar to the proper location.
-        priv.toolbar.remove(priv.tab_bar.as(gtk.Widget));
-        switch (config.@"gtk-tabs-location") {
-            .top => priv.toolbar.addTopBar(priv.tab_bar.as(gtk.Widget)),
-            .bottom => priv.toolbar.addBottomBar(priv.tab_bar.as(gtk.Widget)),
+        // Move the tab bar to the proper location, or hide it for left sidebar.
+        const using_sidebar = config.@"gtk-tabs-location" == .left;
+        priv.sidebar_box.as(gtk.Widget).setVisible(@intFromBool(using_sidebar));
+        if (using_sidebar) {
+            self.applySidebarState();
+        } else {
+            priv.toolbar.remove(priv.tab_bar.as(gtk.Widget));
+            switch (config.@"gtk-tabs-location") {
+                .top => priv.toolbar.addTopBar(priv.tab_bar.as(gtk.Widget)),
+                .bottom => priv.toolbar.addBottomBar(priv.tab_bar.as(gtk.Widget)),
+                .left => unreachable,
+            }
         }
+        // Trigger tabs-visible to re-evaluate (hides tab_bar in left sidebar mode).
+        self.as(gobject.Object).notifyByPspec(
+            properties.@"tabs-visible".impl.param_spec,
+        );
 
         // Do our window-protocol specific appearance sync.
         priv.winproto.syncAppearance() catch |err| {
@@ -959,6 +1054,9 @@ pub const Window = extern struct {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
 
+        // In left sidebar mode the tab bar is replaced by the sidebar.
+        if (config.@"gtk-tabs-location" == .left) return false;
+
         switch (config.@"gtk-titlebar-style") {
             .tabs => {
                 // *Conditionally* disable the tab bar when maximized, the titlebar
@@ -1248,6 +1346,22 @@ pub const Window = extern struct {
         self.performBindingAction(.new_tab);
     }
 
+    fn sidebarToggleClicked(_: *gtk.Button, self: *Self) callconv(.c) void {
+        self.toggleTabSidebar();
+    }
+
+    fn sidebarRowActivated(
+        _: *gtk.ListBox,
+        row: *gtk.ListBoxRow,
+        self: *Self,
+    ) callconv(.c) void {
+        const page: *adw.TabPage = @ptrCast(@alignCast(
+            row.as(gobject.Object).getData("tab-page") orelse return,
+        ));
+        self.private().tab_view.setSelectedPage(page);
+        if (self.getActiveSurface()) |surface| surface.grabFocus();
+    }
+
     fn tabOverviewCreateTab(
         _: *adw.TabOverview,
         self: *Self,
@@ -1424,6 +1538,9 @@ pub const Window = extern struct {
         // If the tab was previously marked as needing attention
         // (e.g. due to a bell character), we now unmark that
         page.setNeedsAttention(@intFromBool(false));
+
+        // Keep sidebar selection in sync.
+        if (self.sidebarActive()) self.syncSidebarList();
     }
 
     fn tabViewPageAttached(
@@ -1435,6 +1552,9 @@ pub const Window = extern struct {
         // Get the attached page which must be a Tab object.
         const child = page.getChild();
         const tab = gobject.ext.cast(Tab, child) orelse return;
+
+        // Sync the sidebar list if it is open.
+        if (self.sidebarActive()) self.syncSidebarList();
 
         // Attach listeners for the tab.
         _ = Tab.signals.@"close-request".connect(
@@ -1492,6 +1612,9 @@ pub const Window = extern struct {
         if (tab.getSurfaceTree()) |tree| {
             self.disconnectSurfaceHandlers(tree);
         }
+
+        // Sync the sidebar list if it is open.
+        if (self.sidebarActive()) self.syncSidebarList();
     }
 
     fn tabViewCreateWindow(
@@ -2026,6 +2149,10 @@ pub const Window = extern struct {
             class.bindTemplateChildPrivate("tab_view", .{});
             class.bindTemplateChildPrivate("toolbar", .{});
             class.bindTemplateChildPrivate("toast_overlay", .{});
+            class.bindTemplateChildPrivate("sidebar_box", .{});
+            class.bindTemplateChildPrivate("sidebar_tab_list", .{});
+            class.bindTemplateChildPrivate("sidebar_toggle_btn", .{});
+            class.bindTemplateChildPrivate("sidebar_toggle_icon", .{});
 
             // Template Callbacks
             class.bindTemplateCallback("realize", &windowRealize);
@@ -2049,6 +2176,8 @@ pub const Window = extern struct {
             class.bindTemplateCallback("notify_scale_factor", &propScaleFactor);
             class.bindTemplateCallback("titlebar_style_is_tabs", &closureTitlebarStyleIsTab);
             class.bindTemplateCallback("computed_subtitle", &closureSubtitle);
+            class.bindTemplateCallback("sidebar_toggle_clicked", &sidebarToggleClicked);
+            class.bindTemplateCallback("sidebar_row_activated", &sidebarRowActivated);
 
             // Virtual methods
             gobject.Object.virtual_methods.dispose.implement(class, &dispose);
