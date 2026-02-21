@@ -1469,6 +1469,14 @@ pub const Window = extern struct {
         if (self.getActiveSurface()) |surface| surface.grabFocus();
     }
 
+    fn sidebarPageTitleChanged(
+        _: *adw.TabPage,
+        _: *gobject.ParamSpec,
+        self: *Self,
+    ) callconv(.c) void {
+        if (self.sidebarActive()) self.syncSidebarList();
+    }
+
     fn tabOverviewCreateTab(
         _: *adw.TabOverview,
         self: *Self,
@@ -1663,6 +1671,15 @@ pub const Window = extern struct {
         // Sync the sidebar list if it is open.
         if (self.sidebarActive()) self.syncSidebarList();
 
+        // Keep sidebar in sync when this page's title changes.
+        _ = gobject.Object.signals.notify.connect(
+            page,
+            *Self,
+            sidebarPageTitleChanged,
+            self,
+            .{ .detail = "title" },
+        );
+
         // Attach listeners for the tab.
         _ = Tab.signals.@"close-request".connect(
             tab,
@@ -1707,6 +1724,16 @@ pub const Window = extern struct {
         const tab = gobject.ext.cast(Tab, child) orelse return;
         _ = gobject.signalHandlersDisconnectMatched(
             tab.as(gobject.Object),
+            .{ .data = true },
+            0,
+            0,
+            null,
+            null,
+            self,
+        );
+
+        _ = gobject.signalHandlersDisconnectMatched(
+            page.as(gobject.Object),
             .{ .data = true },
             0,
             0,
