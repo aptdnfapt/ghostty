@@ -579,11 +579,9 @@ pub const Window = extern struct {
         const sidebar = priv.sidebar_box.as(gtk.Widget);
 
         if (expanded) {
-            sidebar.setSizeRequest(220, -1);
             sidebar.removeCssClass("sidebar-collapsed");
             sidebar.addCssClass("sidebar-expanded");
         } else {
-            sidebar.setSizeRequest(36, -1);
             sidebar.removeCssClass("sidebar-expanded");
             sidebar.addCssClass("sidebar-collapsed");
         }
@@ -627,6 +625,23 @@ pub const Window = extern struct {
                 label.as(gtk.Widget).setHexpand(1);
                 row.setChild(label.as(gtk.Widget));
             }
+
+            // Restore persisted color from the TabPage.
+            if (page.as(gobject.Object).getData("sidebar-color")) |color_ptr| {
+                const color_class: [*:0]const u8 = @ptrCast(color_ptr);
+                row.as(gtk.Widget).addCssClass(color_class);
+            }
+
+            const gesture = gtk.GestureClick.new();
+            gesture.as(gtk.GestureSingle).setButton(3);
+            _ = gtk.GestureClick.signals.pressed.connect(
+                gesture,
+                *gtk.ListBoxRow,
+                sidebarRowRightClick,
+                row,
+                .{},
+            );
+            row.as(gtk.Widget).addController(gesture.as(gtk.EventController));
 
             list.append(row.as(gtk.Widget));
 
@@ -1348,6 +1363,98 @@ pub const Window = extern struct {
 
     fn sidebarToggleClicked(_: *gtk.Button, self: *Self) callconv(.c) void {
         self.toggleTabSidebar();
+    }
+
+    const sidebar_colors = [_][:0]const u8{
+        "tab-color-none",
+        "tab-color-red",
+        "tab-color-orange",
+        "tab-color-yellow",
+        "tab-color-green",
+        "tab-color-teal",
+        "tab-color-blue",
+        "tab-color-purple",
+        "tab-color-pink",
+    };
+
+    fn sidebarRowRightClick(
+        _: *gtk.GestureClick,
+        _: c_int,
+        x: f64,
+        y: f64,
+        row: *gtk.ListBoxRow,
+    ) callconv(.c) void {
+        const popover = gtk.Popover.new();
+        popover.setHasArrow(0);
+        popover.setAutohide(1);
+
+        const flow = gtk.FlowBox.new();
+        flow.setMaxChildrenPerLine(3);
+        flow.setColumnSpacing(4);
+        flow.setRowSpacing(4);
+        flow.setSelectionMode(.none);
+        flow.as(gtk.Widget).setMarginStart(8);
+        flow.as(gtk.Widget).setMarginEnd(8);
+        flow.as(gtk.Widget).setMarginTop(8);
+        flow.as(gtk.Widget).setMarginBottom(8);
+
+        const page: *adw.TabPage = @ptrCast(@alignCast(
+            row.as(gobject.Object).getData("tab-page") orelse return,
+        ));
+
+        inline for (sidebar_colors) |color_class| {
+            const btn = gtk.Button.new();
+            btn.as(gtk.Widget).setSizeRequest(24, 24);
+            btn.as(gtk.Widget).addCssClass("sidebar-swatch");
+            btn.as(gtk.Widget).addCssClass(color_class.ptr);
+            btn.as(gobject.Object).setData("color-class", @constCast(color_class.ptr));
+            btn.as(gobject.Object).setData("target-row", row);
+            btn.as(gobject.Object).setData("target-page", page);
+            _ = gtk.Button.signals.clicked.connect(
+                btn,
+                *gtk.Popover,
+                sidebarSwatchClicked,
+                popover,
+                .{},
+            );
+            flow.append(btn.as(gtk.Widget));
+        }
+
+        popover.setChild(flow.as(gtk.Widget));
+        popover.as(gtk.Widget).setParent(row.as(gtk.Widget));
+
+        const rect = gdk.Rectangle{
+            .f_x = @intFromFloat(x),
+            .f_y = @intFromFloat(y),
+            .f_width = 1,
+            .f_height = 1,
+        };
+        popover.setPointingTo(&rect);
+        popover.popup();
+    }
+
+    fn sidebarSwatchClicked(
+        btn: *gtk.Button,
+        popover: *gtk.Popover,
+    ) callconv(.c) void {
+        const color_class: [*:0]const u8 = @ptrCast(
+            btn.as(gobject.Object).getData("color-class") orelse return,
+        );
+        const page: *adw.TabPage = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("target-page") orelse return,
+        ));
+        const row: *gtk.ListBoxRow = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("target-row") orelse return,
+        ));
+        // Persist color on the TabPage so it survives list rebuilds.
+        page.as(gobject.Object).setData("sidebar-color", @constCast(color_class));
+        // Apply immediately to the current row.
+        const row_widget = row.as(gtk.Widget);
+        for (sidebar_colors) |c| {
+            row_widget.removeCssClass(c.ptr);
+        }
+        row_widget.addCssClass(color_class);
+        popover.popdown();
     }
 
     fn sidebarRowActivated(

@@ -165,17 +165,22 @@ label.resize-overlay {
   background-color: @headerbar_bg_color;
   border-right: 1px solid @borders;
   min-width: 36px;
+  transition: min-width 200ms ease;
+  overflow: hidden;
+}
+
+.sidebar-box.sidebar-collapsed {
+  min-width: 36px;
+}
+
+.sidebar-box.sidebar-expanded {
+  min-width: 220px;
 }
 
 .sidebar-toggle-btn {
   padding: 4px 0;
   border-radius: 0;
   min-height: 32px;
-}
-
-.sidebar-separator {
-  min-width: 1px;
-  background-color: @borders;
 }
 
 .sidebar-tab-list {
@@ -201,6 +206,35 @@ label.resize-overlay {
 .sidebar-tab-list row:hover:not(:selected) {
   background-color: rgba(127, 127, 127, 0.15);
 }
+
+/* Tab row color marks */
+.sidebar-tab-list row.tab-color-red    { border-left: 3px solid #e74c3c; }
+.sidebar-tab-list row.tab-color-orange { border-left: 3px solid #e67e22; }
+.sidebar-tab-list row.tab-color-yellow { border-left: 3px solid #f1c40f; }
+.sidebar-tab-list row.tab-color-green  { border-left: 3px solid #2ecc71; }
+.sidebar-tab-list row.tab-color-teal   { border-left: 3px solid #1abc9c; }
+.sidebar-tab-list row.tab-color-blue   { border-left: 3px solid #3498db; }
+.sidebar-tab-list row.tab-color-purple { border-left: 3px solid #9b59b6; }
+.sidebar-tab-list row.tab-color-pink   { border-left: 3px solid #e91e8c; }
+.sidebar-tab-list row.tab-color-none   { border-left: 3px solid transparent; }
+
+/* Color swatch buttons in right-click popover */
+.sidebar-swatch {
+  border-radius: 4px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+}
+
+.sidebar-swatch.tab-color-none   { background: rgba(127,127,127,0.3); }
+.sidebar-swatch.tab-color-red    { background: #e74c3c; }
+.sidebar-swatch.tab-color-orange { background: #e67e22; }
+.sidebar-swatch.tab-color-yellow { background: #f1c40f; }
+.sidebar-swatch.tab-color-green  { background: #2ecc71; }
+.sidebar-swatch.tab-color-teal   { background: #1abc9c; }
+.sidebar-swatch.tab-color-blue   { background: #3498db; }
+.sidebar-swatch.tab-color-purple { background: #9b59b6; }
+.sidebar-swatch.tab-color-pink   { background: #e91e8c; }
 
 /*
  * Splits
