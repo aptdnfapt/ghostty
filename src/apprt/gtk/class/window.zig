@@ -616,7 +616,28 @@ pub const Window = extern struct {
                 label.as(gtk.Widget).setHalign(.start);
                 label.as(gtk.Widget).setHexpand(1);
                 label.setEllipsize(.end);
-                row.setChild(label.as(gtk.Widget));
+
+                const more_btn = gtk.Button.new();
+                more_btn.as(gtk.Widget).addCssClass("flat");
+                more_btn.as(gtk.Widget).addCssClass("sidebar-more-btn");
+                more_btn.as(gtk.Widget).setTooltipText(i18n._("Rename Tab"));
+                const more_icon = gtk.Image.newFromIconName("view-more-symbolic");
+                more_btn.setChild(more_icon.as(gtk.Widget));
+                more_btn.as(gobject.Object).setData("tab-page", page);
+                more_btn.as(gobject.Object).setData("target-row", row);
+                _ = gtk.Button.signals.clicked.connect(
+                    more_btn,
+                    *Self,
+                    sidebarMoreBtnClicked,
+                    self,
+                    .{},
+                );
+
+                const hbox = gtk.Box.new(.horizontal, 0);
+                hbox.as(gtk.Widget).setHexpand(1);
+                hbox.append(label.as(gtk.Widget));
+                hbox.append(more_btn.as(gtk.Widget));
+                row.setChild(hbox.as(gtk.Widget));
             } else {
                 const first: u8 = if (title_raw[0] != 0) title_raw[0] else 'T';
                 var buf: [2]u8 = .{ first, 0 };
@@ -631,17 +652,6 @@ pub const Window = extern struct {
                 const color_class: [*:0]const u8 = @ptrCast(color_ptr);
                 row.as(gtk.Widget).addCssClass(color_class);
             }
-
-            const gesture = gtk.GestureClick.new();
-            gesture.as(gtk.GestureSingle).setButton(3);
-            _ = gtk.GestureClick.signals.pressed.connect(
-                gesture,
-                *gtk.ListBoxRow,
-                sidebarRowRightClick,
-                row,
-                .{},
-            );
-            row.as(gtk.Widget).addController(gesture.as(gtk.EventController));
 
             list.append(row.as(gtk.Widget));
 
@@ -1377,16 +1387,96 @@ pub const Window = extern struct {
         "tab-color-pink",
     };
 
-    fn sidebarRowRightClick(
-        _: *gtk.GestureClick,
-        _: c_int,
-        x: f64,
-        y: f64,
-        row: *gtk.ListBoxRow,
+    fn sidebarMoreBtnClicked(
+        btn: *gtk.Button,
+        self: *Self,
     ) callconv(.c) void {
+        const page: *adw.TabPage = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("tab-page") orelse return,
+        ));
+        const row: *gtk.ListBoxRow = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("target-row") orelse return,
+        ));
+        self.private().context_menu_page = page;
+
         const popover = gtk.Popover.new();
         popover.setHasArrow(0);
         popover.setAutohide(1);
+        popover.as(gtk.Widget).addCssClass("sidebar-popover");
+
+        const vbox = gtk.Box.new(.vertical, 0);
+        vbox.as(gtk.Widget).addCssClass("sidebar-menu-box");
+
+        const rename_btn = gtk.Button.newWithLabel(i18n._("Rename Tab"));
+        rename_btn.as(gtk.Widget).addCssClass("flat");
+        rename_btn.as(gtk.Widget).addCssClass("sidebar-menu-item");
+        rename_btn.as(gobject.Object).setData("tab-page", page);
+        rename_btn.as(gobject.Object).setData("window", self);
+        _ = gtk.Button.signals.clicked.connect(
+            rename_btn,
+            *gtk.Popover,
+            sidebarMenuRenameClicked,
+            popover,
+            .{},
+        );
+
+        const color_btn = gtk.Button.newWithLabel(i18n._("Color Tab"));
+        color_btn.as(gtk.Widget).addCssClass("flat");
+        color_btn.as(gtk.Widget).addCssClass("sidebar-menu-item");
+        color_btn.as(gobject.Object).setData("tab-page", page);
+        color_btn.as(gobject.Object).setData("target-row", row);
+        color_btn.as(gobject.Object).setData("source-btn", btn);
+        _ = gtk.Button.signals.clicked.connect(
+            color_btn,
+            *gtk.Popover,
+            sidebarMenuColorClicked,
+            popover,
+            .{},
+        );
+
+        vbox.append(rename_btn.as(gtk.Widget));
+        vbox.append(color_btn.as(gtk.Widget));
+        popover.setChild(vbox.as(gtk.Widget));
+        popover.as(gtk.Widget).setParent(btn.as(gtk.Widget));
+        popover.popup();
+    }
+
+    fn sidebarMenuRenameClicked(
+        btn: *gtk.Button,
+        popover: *gtk.Popover,
+    ) callconv(.c) void {
+        const page: *adw.TabPage = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("tab-page") orelse return,
+        ));
+        const self: *Self = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("window") orelse return,
+        ));
+        popover.popdown();
+        self.private().context_menu_page = page;
+        const child = page.getChild();
+        const tab = gobject.ext.cast(Tab, child) orelse return;
+        tab.promptTabTitle();
+    }
+
+    fn sidebarMenuColorClicked(
+        btn: *gtk.Button,
+        popover: *gtk.Popover,
+    ) callconv(.c) void {
+        const page: *adw.TabPage = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("tab-page") orelse return,
+        ));
+        const row: *gtk.ListBoxRow = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("target-row") orelse return,
+        ));
+        const source_btn: *gtk.Button = @ptrCast(@alignCast(
+            btn.as(gobject.Object).getData("source-btn") orelse return,
+        ));
+        popover.popdown();
+
+        const color_popover = gtk.Popover.new();
+        color_popover.setHasArrow(0);
+        color_popover.setAutohide(1);
+        color_popover.as(gtk.Widget).addCssClass("sidebar-popover");
 
         const flow = gtk.FlowBox.new();
         flow.setMaxChildrenPerLine(3);
@@ -1398,39 +1488,27 @@ pub const Window = extern struct {
         flow.as(gtk.Widget).setMarginTop(8);
         flow.as(gtk.Widget).setMarginBottom(8);
 
-        const page: *adw.TabPage = @ptrCast(@alignCast(
-            row.as(gobject.Object).getData("tab-page") orelse return,
-        ));
-
         inline for (sidebar_colors) |color_class| {
-            const btn = gtk.Button.new();
-            btn.as(gtk.Widget).setSizeRequest(24, 24);
-            btn.as(gtk.Widget).addCssClass("sidebar-swatch");
-            btn.as(gtk.Widget).addCssClass(color_class.ptr);
-            btn.as(gobject.Object).setData("color-class", @constCast(color_class.ptr));
-            btn.as(gobject.Object).setData("target-row", row);
-            btn.as(gobject.Object).setData("target-page", page);
+            const swatch = gtk.Button.new();
+            swatch.as(gtk.Widget).setSizeRequest(24, 24);
+            swatch.as(gtk.Widget).addCssClass("sidebar-swatch");
+            swatch.as(gtk.Widget).addCssClass(color_class.ptr);
+            swatch.as(gobject.Object).setData("color-class", @constCast(color_class.ptr));
+            swatch.as(gobject.Object).setData("target-row", row);
+            swatch.as(gobject.Object).setData("target-page", page);
             _ = gtk.Button.signals.clicked.connect(
-                btn,
+                swatch,
                 *gtk.Popover,
                 sidebarSwatchClicked,
-                popover,
+                color_popover,
                 .{},
             );
-            flow.append(btn.as(gtk.Widget));
+            flow.append(swatch.as(gtk.Widget));
         }
 
-        popover.setChild(flow.as(gtk.Widget));
-        popover.as(gtk.Widget).setParent(row.as(gtk.Widget));
-
-        const rect = gdk.Rectangle{
-            .f_x = @intFromFloat(x),
-            .f_y = @intFromFloat(y),
-            .f_width = 1,
-            .f_height = 1,
-        };
-        popover.setPointingTo(&rect);
-        popover.popup();
+        color_popover.setChild(flow.as(gtk.Widget));
+        color_popover.as(gtk.Widget).setParent(source_btn.as(gtk.Widget));
+        color_popover.popup();
     }
 
     fn sidebarSwatchClicked(

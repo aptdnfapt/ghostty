@@ -236,6 +236,35 @@ label.resize-overlay {
 .sidebar-swatch.tab-color-purple { background: #9b59b6; }
 .sidebar-swatch.tab-color-pink   { background: #e91e8c; }
 
+.sidebar-more-btn {
+  padding: 0;
+  min-width: 24px;
+  min-height: 24px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.sidebar-tab-list row:hover .sidebar-more-btn,
+.sidebar-tab-list row:selected .sidebar-more-btn {
+  opacity: 1;
+}
+
+.sidebar-menu-box {
+  padding: 4px;
+}
+
+.sidebar-menu-item {
+  border-radius: 6px;
+  padding: 4px 12px;
+  min-width: 120px;
+}
+
+popover.sidebar-popover > contents {
+  box-shadow: none;
+  border-radius: 0;
+  margin: 0;
+}
+
 /*
  * Splits
  */
